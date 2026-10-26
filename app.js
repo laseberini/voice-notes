@@ -647,10 +647,9 @@
     const list = kind === 'list';
     $('rec-title').textContent = title || (appendTo ? (list ? 'Add to list' : 'Add to note') : (list ? 'New to-do list' : 'New note'));
     $('rec-live').className = 'live-card' + (list ? '' : ' note');
-    $('newline').hidden = !list;
     $('rec-hint').textContent = list
       ? 'Say an item, tap New line, say the next one. Tap the stop button when you’re done.'
-      : 'Tap the stop button when you’re done.';
+      : 'Tap New line to start a new line. Tap the stop button when you’re done.';
     history.pushState({ view: 'rec' }, '');
     show('rec');
 
@@ -708,12 +707,16 @@
   // What's been said so far, with voice commands and remembered word fixes applied.
   const spokenText = () => applyFixes(applyVoiceCommands([...finals, interim].filter(Boolean).join(' ')));
 
-  // "New line" button (to-do lists): the next words start a new item.
+  // "New line" button: the next words start a new line (in a to-do list, a new item).
   // Whatever is still being recognised is kept on the current line, and the
   // recogniser restarts so its late result can't land on the new line.
   $('newline').onclick = () => {
     if (!state.recording) return;
-    if (!spokenText().split('\n').pop().trim()) return; // nothing said on this line yet
+    const said = spokenText();
+    // Adding to a note: tapping first starts the new words on their own line.
+    // (A to-do list does that by itself, each addition is a new item.)
+    const startOfAddition = !said && state.kind !== 'list' && state.before.trim();
+    if (!said.split('\n').pop().trim() && !startOfAddition) return; // nothing said on this line yet
     if (interim) {
       finals.push(interim.trim());
       interim = '';
@@ -728,7 +731,8 @@
     const said = spokenText();
     box.textContent = '';
     if (state.kind !== 'list') {
-      const text = [state.before.trim(), said].filter(Boolean).join(' ');
+      const before = state.before.trim();
+      const text = said.startsWith('\n') ? before + said : [before, said].filter(Boolean).join(' ');
       if (text) box.textContent = text;
       else box.innerHTML = '<p class="placeholder">Listening…</p>';
     } else {
@@ -761,7 +765,8 @@
       setTimeout(r, 2500); // don't hang if the browser never says it's finished
     });
     recognition = null;
-    const text = spokenText().replace(/\n{2,}/g, '\n').replace(/^\n+|\n+$/g, '');
+    let text = spokenText().replace(/\n{2,}/g, '\n').replace(/\n+$/, '');
+    if (!state.appendTo) text = text.replace(/^\n+/, ''); // a new line at the start only matters when adding
     let newItemId = null;
     try {
       if (!text) toast('No speech heard. Try again.');
